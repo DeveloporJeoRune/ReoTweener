@@ -1,0 +1,32 @@
+--[[Variables]]
+
+local Runservice = game:GetService("RunService")
+local TweenPlayRemoteEvent = game.ReplicatedStorage:WaitForChild("TweenPlayOnClient",5) :: RemoteEvent
+local TweenStopRemoteEvent = game.ReplicatedStorage:WaitForChild("TweenStopOnClient",5) :: RemoteEvent
+assert(TweenPlayRemoteEvent,"TweenPlayEvent가 없습니다. 서버에서 모듈 호출이 필요합니다.")
+assert(TweenStopRemoteEvent,"TweenStopEvent가 없습니다. 서버에서 모듈 호출이 필요합니다.")
+local ReoModule = script.ParentModule.Value
+local ReoTweenModule = require(ReoModule :: ModuleScript)
+local ReoTweenTypes = require(ReoModule.TweenTypes :: ModuleScript)
+local ClientReoTweens = {}
+
+
+----------------트윈 실행 도중 접속 문제 해결 방안 강구 필요
+
+TweenPlayRemoteEvent.OnClientEvent:Connect(function(ReoTween : ReoTweenTypes.ReoTween)
+	-- print(ReoTween)
+	local StartTick = ReoTween._TweenStartTick
+	local TargetTime = ReoTween._Time
+	--[[if ClientReoTweens[StartTick] then
+		ReoTweenModule.Stop(ClientReoTweens[StartTick])
+	end]]
+	ClientReoTweens[StartTick] = ReoTween
+	ReoTweenModule.Play(ClientReoTweens[StartTick])
+end)
+
+TweenStopRemoteEvent.OnClientEvent:Connect(function(StartTick)
+	if ClientReoTweens[StartTick] then
+		ReoTweenModule.Stop(ClientReoTweens[StartTick])
+		ClientReoTweens[StartTick] = nil
+	end 
+end)

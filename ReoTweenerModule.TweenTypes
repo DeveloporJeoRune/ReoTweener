@@ -1,0 +1,53 @@
+local Types = {}
+
+--[[export type Pattern = {
+	_Function : ((CFrame | Vector3 | number)?) -> (CFrame | Vector3 | number)?
+}]]
+
+export type MoonAniInfo = {
+	_InfoString : string
+}
+
+export type ReoClientInput = {
+	_enabled : boolean,
+	_startTick : number,
+	_target : Instance,
+	_goal : {},
+	_time : number
+}
+
+export type ReoInfo = {
+	_Time : number,
+	_TweenStyle : {EasingStyle : Enum.EasingStyle, EasingDirection : Enum.EasingDirection},
+	_CustomTweenStyle : ((number?) -> (number?))?,
+	_TweenStyleFromMoonAni : MoonAniInfo?,
+	_GlobalOnAllClient : boolean?,
+	_Pivot : BasePart?,
+	_ResetInitEveryPlay : boolean?,
+}
+
+export type ReoTween = {
+	_Time : number,
+	_ResetInitEveryPlay : boolean,
+	_TweenStyle : {EasingStyle : Enum.EasingStyle, EasingDirection : Enum.EasingDirection},
+	_CustomTweenStyle : ((number?) -> (number?))?,
+	_TweenStyleFromMoonAni : MoonAniInfo?,
+	_Pivot : BasePart?,
+	_Status : string,
+	_IsGlobalOnAllClient : boolean,
+	_InitialSetup : {},
+	_Goal : {},
+	_PausedGoal : {},
+	_Target : Instance,
+	_TweenStartTick : number,
+	_TweenConnection : RBXScriptSignal?,
+	_TweenPriority : number,
+	--method
+	
+	new : (Target : Instance,ReoTweenInfo : ReoInfo,Goal : {},Setup : {}?) -> (ReoTween),
+	Play : (self : ReoTween) -> (),
+	Stop : (self : ReoTween) -> (),
+	--TweenFrameLoad : (self : ReoTween) -> (),
+}
+
+return Types

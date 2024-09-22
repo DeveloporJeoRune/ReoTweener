@@ -1,0 +1,264 @@
+--[[memo]]-----------------------------
+
+--reoTween에서 Resume 필요(재개 함수)
+--ReoTween객체를 안쓸 시 삭제하기 위한 로직(최적화) 필요
+
+
+--[[Services]]--------------
+
+local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Tween = game:GetService("TweenService")
+
+--[[Variables]]--------------
+
+local TweenPlayRemoteEvent = ReplicatedStorage:FindFirstChild("TweenPlayOnClient") :: RemoteEvent
+local TweenStopRemoteEvent = ReplicatedStorage:FindFirstChild("TweenStopOnClient") :: RemoteEvent
+
+local TypeModule = require(script.TweenTypes)
+
+local ReoTween = {} :: TypeModule.ReoTween
+ReoTween.__index = ReoTween
+
+ReoTweenObjects = {}
+
+local IsServer = RunService:IsServer()
+
+--[[local DefaultTweenSetting = {
+} :: TypeModule.ReoInfo]]
+
+--[[Functions]]--------------
+
+-- 기초 세팅
+function StartingSetup()
+	local ClientScript = script.TweenLocal
+	ClientScript.Parent = game.StarterPlayer.StarterPlayerScripts
+	ClientScript.ParentModule.Value = script
+	
+	TweenPlayRemoteEvent = Instance.new("RemoteEvent",ReplicatedStorage)
+	TweenPlayRemoteEvent.Name = "TweenPlayOnClient"
+	TweenStopRemoteEvent = Instance.new("RemoteEvent",ReplicatedStorage)
+	TweenStopRemoteEvent.Name = "TweenStopOnClient"
+	
+	for _,plr in pairs(game.Players:GetPlayers()) do
+		local ClonedClient = ClientScript:Clone()
+		ClonedClient.Parent = plr.PlayerScripts
+		ClonedClient.Enabled = true
+		ClonedClient.ParentModule.Value = script
+	end
+	
+	ClientScript.Enabled = true
+end
+
+
+-- 트윈 속성 일부를 일시 중단하는 함수
+local function PauseGoals(source, target)
+	for i, value in pairs(source._Goal) do
+		if target._Goal[i] then
+			source._PausedGoal[i] = value
+			source._Goal[i] = nil
+		end
+	end
+end
+
+-- 트윈 재생 시, 하위 순위에 있는 트윈에 같은 속성 정지 함수
+function TweenPlaySetUp(self : TypeModule.ReoTween)
+	local targetTweens = ReoTweenObjects[self._Target]
+
+	if not targetTweens then return end  -- 타겟이 없으면 종료
+
+	for _, otherTween : TypeModule.ReoTween in pairs(targetTweens) do
+		if otherTween == self or otherTween._Status ~= "playing" then continue end
+
+		if otherTween._TweenPriority <= self._TweenPriority then
+			PauseGoals(otherTween, self)
+		else
+			PauseGoals(self, otherTween)
+		end
+	end
+	
+end
+
+-- TweenStopSet에서 재개 할 필요 없는 객체 (타겟에 다른 우선순위 객체가 있을 시) 재개 방지 함수
+function CheckOtherTweenPriority(CheckTargets,PivotPriority,TargetTable)
+	for _, otherTween : TypeModule.ReoTween in pairs(CheckTargets) do
+		if otherTween._Status == "playing" and otherTween._TweenPriority >= PivotPriority then
+			for IgnoreIndex,__ in pairs(otherTween._Goal) do
+				if TargetTable[IgnoreIndex] == nil then continue end
+				TargetTable[IgnoreIndex] = nil
+			end
+		end
+	end
+	return TargetTable
+end
+
+-- 트윈 정지 시, 하위 순위에 있는 트윈에 같은 속성 재개 함수
+function TweenStopSet(self : TypeModule.ReoTween)
+	local targetTweens = ReoTweenObjects[self._Target]
+
+	if not targetTweens then return end  -- 타겟이 없으면 종료
+
+	for _, otherTween : TypeModule.ReoTween in pairs(targetTweens) do
+		if otherTween == self or otherTween._Status ~= "playing" then continue end
+		local CheckList = CheckOtherTweenPriority(targetTweens,self._TweenPriority,self._Goal)
+
+		if otherTween._TweenPriority <= self._TweenPriority then
+			for i, value in pairs(CheckList) do
+				if otherTween._PausedGoal[i] then
+					otherTween._Goal[i] = value
+					otherTween._PausedGoal[i] = nil
+				end
+			end
+		end
+	end
+
+end
+
+function GetValueFromPivot(Pivot : BasePart, Goal : {})
+	local Values = {}
+	for i,v in pairs(Goal) do
+		Values[i] = Pivot[i]
+	end
+	return Values
+end
+
+function GetChangedValue(self : TypeModule.ReoTween)
+	
+end
+
+if IsServer then
+	StartingSetup()
+end
+
+--[[Structures]]--------------
+
+function ReoTween.new(Target : Instance, ReoTweenInfo : TypeModule.ReoInfo, Goal : {}, Setup : {}?)
+	local self = ( setmetatable({},ReoTween)::unknown ) :: TypeModule.ReoTween
+	
+	self._Time = ReoTweenInfo._Time
+	
+	self._Pivot = ReoTweenInfo._Pivot
+	self._TweenStyle = ReoTweenInfo._TweenStyle or {}
+	self._TweenStyle.EasingStyle = self._TweenStyle.EasingStyle or Enum.EasingStyle.Linear
+	self._TweenStyle.EasingDirection = self._TweenStyle.EasingDirection or Enum.EasingDirection.Out
+	
+	self._CustomTweenStyle = ReoTweenInfo._CustomTweenStyle
+	
+	self._TweenStyleFromMoonAni = ReoTweenInfo._TweenStyleFromMoonAni
+	
+	self._IsGlobalOnAllClient = ReoTweenInfo._GlobalOnAllClient or false
+	self._ResetInitEveryPlay = ReoTweenInfo._ResetInitEveryPlay or ReoTweenInfo._ResetInitEveryPlay == nil
+	
+	self._Status = 'stopped'
+	self._Goal = Goal
+	self._Target = Target
+	self._InitialSetup = Setup or {}
+	self._PausedGoal = {}
+	self._TweenStartTick = -1
+	self._TweenPriority = 0
+
+	if ReoTweenObjects[Target] == nil then
+		ReoTweenObjects[Target] = {}
+	end
+	table.insert(ReoTweenObjects[Target], self)
+	
+	return self
+end
+
+function ReoTween:Play()
+	
+	if self._Status == 'playing' then
+		ReoTween.Stop(self)
+	end
+	
+	TweenPlaySetUp(self)
+	
+	self._Status = 'playing'
+	self._TweenStartTick = tick()
+	local IsClientGlobal = self._IsGlobalOnAllClient
+	local TweenStyle = self._TweenStyle
+	
+	if (IsServer or not IsClientGlobal)  then --서버에서 호출 명령한 클라이언트 판별
+		
+		--초기값 세팅
+		for i, v in pairs(self._Goal) do
+			if self._ResetInitEveryPlay or not self._InitialSetup[i] then
+				self._InitialSetup[i] = self._Target[i] -- 초기 설정이 없으면 현재 값을 초기값으로 설정
+			else
+				-- 초기 설정된 값이 있다면 오브젝트를 해당 값으로 설정
+				self._Target[i] = self._InitialSetup[i]
+			end
+		end
+	end
+	
+	task.spawn(function()
+		if IsClientGlobal and IsServer then
+			TweenPlayRemoteEvent:FireAllClients(self)
+			task.wait(self._Time)
+			for i,v in pairs(self._Goal) do
+				pcall(function()
+					self._Target[i] = v 
+				end)
+			end
+		else
+			local TweenConnectionType = RunService.RenderStepped
+			if IsServer then TweenConnectionType = RunService.Stepped end
+			self._TweenConnection = TweenConnectionType:Connect(function()
+				local DeltaTime = tick() - self._TweenStartTick
+				local TweenProgress = DeltaTime / self._Time
+
+				for i,v in pairs(self._Goal) do
+					pcall(function()
+						if self._TweenStyleFromMoonAni then
+							print("Moon")
+						elseif self._CustomTweenStyle then
+							print("Custom")
+						else
+							local AlphaValue = Tween:GetValue(TweenProgress,TweenStyle.EasingStyle,TweenStyle.EasingDirection)
+							local ProgressValue
+							local PivotCFrame = self._Pivot and self._Pivot.CFrame or CFrame.new()
+							local PivotPosition = PivotCFrame.Position or Vector3.new()
+							local PivotOrientation = PivotCFrame.Rotation:ToOrientation() or Vector3.new()
+							
+							if i == 'CFrame' then
+								ProgressValue = PivotCFrame * self._InitialSetup[i]:Lerp(v,AlphaValue)
+							else
+								ProgressValue = self._InitialSetup[i] + (v-self._InitialSetup[i])*AlphaValue
+							end
+
+							if i == 'Position' then
+								ProgressValue = PivotPosition + ProgressValue
+							elseif i == 'Orientation' then
+								ProgressValue = PivotOrientation + ProgressValue
+							end
+							
+							self._Target[i] = ProgressValue
+						end
+					end)
+				end
+				if TweenProgress >= 1 or self._Goal == nil then
+					ReoTween.Stop(self)
+				end
+			end)
+		end
+	end)
+end
+
+function ReoTween:Stop()
+	--if self == nil then return end
+	local IsClientGlobal = self._IsGlobalOnAllClient
+	if IsClientGlobal and IsServer then
+		TweenStopRemoteEvent:FireAllClients(self._Time)
+	else
+		local Connection = self._TweenConnection
+		if Connection then
+			Connection:Disconnect()
+			Connection = nil
+		end
+		TweenStopSet(self)
+		self._Status = 'stopped'
+	end
+end
+
+return ReoTween
